@@ -4,16 +4,19 @@
 
 # SpeedTorch
 
-[![Join the chat at https://gitter.im/SpeedTorch/community](https://badges.gitter.im/SpeedTorch/community.svg)](https://gitter.im/SpeedTorch/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+[![Join the chat at https://gitter.im/SpeedTorch/community](https://badges.gitter.im/SpeedTorch/community.svg)](https://gitter.im/SpeedTorch/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge) [![Downloads](https://pepy.tech/badge/speedtorch)](https://pepy.tech/project/speedtorch) [![Downloads](https://pepy.tech/badge/speedtorch/week)](https://pepy.tech/project/speedtorch/week)
 
 Faster pinned CPU tensor <-> GPU Pytorch variabe transfer and GPU tensor <-> GPU Pytorch variable transfer, in certain cases. 
 
+## Update 9-29-19
+
+Since for some systems, using the pinned Pytorch CPU tensors is faster than using Cupy tensors (see 'How It Works' section for more detail), I created general Pytorch tensor classes `PytorchModelFactory` and `PytorchOptimizerFactory` which can specifiy either setting the tensors to `cuda` or `cpu`, and if using `cpu`, if its memory should be pinned. The original `GPUPytorchModelFactory` and `GPUPytorchOptimizerFactory` classes are still in the library, so no existing code using SpeedTorch should be affected. The documentation has been updated to include these new classes. 
 
 ## What is it?
 
 This library revovles around Cupy tensors pinned to CPU, which can achieve **3.1x** faster CPU -> GPU transfer than regular Pytorch Pinned CPU tensors can, and **410x** faster GPU -> CPU transfer. Speed depends on amount of data, and number of CPU cores on your system (see the How it Works section for more details)
 
-The library includes functions for embeddings training; it can host embeddings on CPU RAM when they're not being trained, sparing GPU RAM. 
+The library includes functions for embeddings training; it can host embeddings on CPU RAM while they are idle, sparing GPU RAM. 
 
 ## Inspiration
 
@@ -43,17 +46,19 @@ With fast CPU->GPU, a lot of fun methods can be developed for functionalities wh
 
 (Edit 9-20-19, one of the Pytorch developers pointed out some minor bugs in the original bench marking code, the values and code have been updated)
 
-Here is a notebook comparing transfer via SpeedTorch vs Pytorch tensors, with both pinned CPU and Cuda tensors. All tests were done with a colab instance with a Tesla K80 GPU.
+Here is a notebook comparing transfer via SpeedTorch vs Pytorch tensors, with both pinned CPU and Cuda tensors. All tests were done with a colab instance with a Tesla K80 GPU, and 2 core CPU. 
+
+UPDATE 10-17-19: Google Colab is now standard with 4 core CPUs, so this notebook will give different results than what is reported below, since Pytorch's indexing kernals get more efficient as the number of CPU cores increase. 
 
 https://colab.research.google.com/drive/1PXhbmBZqtiq_NlfgUIaNpf_MfpiQSKKs
 
-This notebook times the data transfer of 131,072 float32 embeddings of dimension 128, to and from the Cupy/Pytorch tensors and Pytorch variables, with n=100. 
+This notebook times the data transfer of 131,072 float32 embeddings of dimension 128, to and from the Cupy/Pytorch tensors and Pytorch variables, with n=100. Google Colab's CPU has 4 cores, which has an impact on the transfer speed. CPU's with a higher number of cores will see less of an advatage to using SpeedTorch. 
 
 The table below is a summary of the results. Transfering data from  Pytorch cuda tensors to the Cuda Pytorch embedding variable is faster than the SpeedTorch equivalent, but for all other transfer types, SpeedTorch is faster. And for the sum of both steps transferring to/from the Cuda Pytorch embedding, SpeedTorch is faster than the Pytorch equivalent for both the regular GPU and CPU Pinned tensors. 
 
 I have noticed that different instances of Colab result in different speed results, so keep this in mind while reviewing these results. A personal run of the colab notebook may result in different values, though the order of magnetude of the results are generally the same. 
 
-The transfer times in the following tables are given in seconds. 
+The transfer times in the following tables are given in seconds. This benchmarking was preformed with a colab instance whose CPU has 2 cores. Colab has a Pro version of paid instances which are 4 core CPUs, so the following benchmarking would not reflect for those instances. 
 
 | Tensor Type	| To Cuda Pytorch Variable	| Comparison |
 | --- | --- | --- |
@@ -109,13 +114,15 @@ For the  GPU <-> GPU transfer, if using ordinary indexing notations in vanilla P
 
 Update 9-20-19: I initially had no idea why this is faster than using Pytorch tensors; I stumbled upon the speed advantage by accident. But one of the Pytorch developers on the Pytorch forum pointed it out. 
 
-As for the better CPU<->GPU transfer, it's because SpeedTorch avoids a CPU indexing operation by masquarding CPU tensors as GPU tensors. The CPU index operation may be slow if working on with very few CPU cores, such as 2 in colab, but may be faster if you have many cores.  It depends on how much data you're transfering and how many cores you have. 
+As for the better CPU<->GPU transfer, it's because SpeedTorch avoids a CPU indexing operation by masquarding CPU tensors as GPU tensors. The CPU index operation may be slow if working on with very few CPU cores, such as 2 in Google Colab, but may be faster if you have many cores.  It depends on how much data you're transfering and how many cores you have. 
 
 As for the better GPU<->GPU transfer, it's because SpeedTorch avoids a bug in the indexing operation. This bug can also be avoided by using the nightly builds, or using `index_select` / `index_copy_` instead of `a[idx]` notation in 1.1/1.2. 
 
 For more details of this, please see this Pytorch post
 
 https://discuss.pytorch.org/t/introducing-speedtorch-4x-speed-cpu-gpu-transfer-110x-gpu-cpu-transfer/56147/2
+
+where a Pytorch engineer gives a detailed analysis on how the Cupy indexing kernals are resulting in speed ups in certain cases. It's not the transfer itself that is getting faster, but the indexing kernals which are being used. 
 
 As for how the memory management in Cupy works, I direct to these two stackoverflow questions I asked, where brilliant user Robert Crovella not only gave detailed explanations, but also figured out how to allocate pinned memory to Cupy arrays by developing his own memory allocator for Cupy. This is basically the core technology behind SpeedTorch. 
 
@@ -347,18 +354,18 @@ Please see this notebook on how to use the data gadget
 
 https://colab.research.google.com/drive/185Z5Gi62AZxh-EeMfrTtjqxEifHOBXxF
 
-### Class GPUPytorchModelFactory
+### Class PytorchModelFactory
 
 ```python
-GPUPytorchModelFactory(model_variable,  total_classes,  embed_dimension, datatype = 'float32')
+PytorchModelFactory(model_variable,  total_classes,  embed_dimension, datatype = 'float32', deviceType = 'cuda', pinType = False)
 ```
 
-Creates switchers for model variables using Pytorch cuda tensors. Switches variables from your full embedding collection and your model batch collection. Each variable needs its own switcher. 
+Creates switchers for model variables using Pytorch tensors. Switches variables from your full embedding collection and your model batch collection. Each variable needs its own switcher. 
 
 Example:
 
 ```python
-uEmbed_switcher = SpeedTorch.ModelFactory( skip_gram_modelSparse.u_embeddings, total_classes=50000, embed_dimension=128)
+uEmbed_switcher = SpeedTorch.PytorchModelFactory( skip_gram_modelSparse.u_embeddings, total_classes=50000, embed_dimension=128)
 ```
 
 Arguments:
@@ -370,6 +377,10 @@ Arguments:
 `embed_dimension`: Dimension of the embeddings.
 
 `datatype` (optional): Datatype for the variable. Default is 'float32'. 
+
+`deviceType` (optional): Set device either to 'cuda' or 'cpu'. Default is 'cuda'
+
+`pinType` (optional): If device is set to 'cpu', you can specify using pinned memory. Default is 'False'. 
 
 
 Methods:
@@ -394,19 +405,18 @@ Methods:
 
 `getNumpyVersion`: Get numpy version of tensor. 
 
-
-### Class GPUPytorchOptimizerFactory
+### Class PytorchOptimizerFactory
 
 ```pyton
-OptimizerFactory( given_optimizer,  total_classes,  embed_dimension, model, variable_name, dtype='float32')
+PytorchOptimizerFactory( given_optimizer,  total_classes,  embed_dimension, model, variable_name, dtype='float32', deviceType = 'cuda', pinType = False)
 ```
 
-Creates switchers for optimizer variables using Cupy. Switches variables from your full embedding collection and your optimizer batch collection. Each variable needs its own switcher. 
+Creates switchers for optimizer variables using Pytorch tensors. Switches variables from your full embedding collection and your optimizer batch collection. Each variable needs its own switcher. 
 
 Example:
 
 ```python
-uAdagrad_switcher = SpeedTorch.OptimizerFactory(given_optimizer,  total_classes,  embed_dimension, model, variable_name, dtype='float32', CPUPinn = False)
+uAdagrad_switcher = SpeedTorch.PytorchOptimizerFactory(given_optimizer,  total_classes,  embed_dimension, model, variable_name, dtype='float32')
 ```
 
 Arguments:
@@ -423,6 +433,10 @@ Arguments:
 
 `dtype` (optional): Data type of your variable. Default is 'float32'
 
+`deviceType` (optional): Set device either to 'cuda' or 'cpu'. Default is 'cuda'
+
+`pinType` (optional): If device is set to 'cpu', you can specify using pinned memory. Default is 'False'. 
+
 
 Methods:
 
@@ -436,8 +450,13 @@ Methods:
 If you use SpeedTorch in your research or wish to cite, please cite with:
 
 @misc{
+
   title={SpeedTorch},
+  
   author={Santosh Gupta},
+  
   howpublished={\url{github.com/Santosh-Gupta/SpeedTorch}},
+  
   year={2019}
+  
 }

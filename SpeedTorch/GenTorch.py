@@ -2,7 +2,7 @@ import torch
 import os
 import numpy as np
 
-class _GPUPytorchCommon():
+class _PytorchCommon():
     def getTorchVar(self):
         return self.TorchFSet
 
@@ -22,27 +22,29 @@ class _GPUPytorchCommon():
             reshapedRetrieval = retrievedPosIndexes.reshape(-1)
         return reshapedRetrieval
 
-class GPUPytorchModelFactory(_GPUPytorchCommon):
+class PytorchModelFactory(_PytorchCommon):
 
-    def __init__(self, model_variable,  total_classes,  embed_dimension, datatype = torch.float ):
+    def __init__(self, model_variable, total_classes, embed_dimension, datatype = torch.float, deviceType = 'cuda', pinType = False):
         self.model_variable = model_variable
         self.total_classes = total_classes
         self.embed_dimension = embed_dimension
         self.dtype = datatype
+        self.deviceType = deviceType
+        self.pinType = pinType
 
     def zerosInit(self):
-        self.pytorchGPUVar = torch.zeros( size=(self.total_classes, self.embed_dimension), dtype=self.dtype, device = 'cuda')
+        self.pytorchGPUVar = torch.zeros( size=(self.total_classes, self.embed_dimension), dtype=self.dtype, device=self.deviceType, pin_memory=self.pinType)
 
     def customInit(self, initFunction, *args):
-        self.pytorchGPUVar = torch.empty(size=(self.total_classes, self.embed_dimension), dtype=self.dtype, device='cuda')
+        self.pytorchGPUVar = torch.empty(size=(self.total_classes, self.embed_dimension), dtype=self.dtype, device=self.deviceType, pin_memory=self.pinType)
         initFunction( self.pytorchGPUVar, *args )
 
     def uniformDistributionInit(self, low, high):
-        self.pytorchGPUVar = torch.empty(size=(self.total_classes, self.embed_dimension), dtype=self.dtype, device='cuda')
+        self.pytorchGPUVar = torch.empty(size=(self.total_classes, self.embed_dimension), dtype=self.dtype, device=self.deviceType, pin_memory=self.pinType)
         torch.nn.init.uniform_(self.pytorchGPUVar, a=low, b=high)
                 
     def normalDistributionInit(self, mean, stdDev ):
-        self.pytorchGPUVar = torch.empty(size=(self.total_classes, self.embed_dimension), dtype=self.dtype, device='cuda')
+        self.pytorchGPUVar = torch.empty(size=(self.total_classes, self.embed_dimension), dtype=self.dtype, device=self.deviceType, pin_memory=self.pinType)
         torch.nn.init.normal_(self.pytorchGPUVar, mean=mean, std=stdDev)
                 
     def variableTransformer(self, batchSize, posPerBatch,  negPerBatch = None ):
@@ -67,16 +69,18 @@ class GPUPytorchModelFactory(_GPUPytorchCommon):
 
         self.pytorchGPUVar[ reshapedRetrieval ] = self.model_variable.weight.data
         
-class GPUPytorchOptimizerFactory(_GPUPytorchCommon): #to do later, able to load matrixes to continue training
+class PytorchOptimizerFactory(_PytorchCommon): #to do later, able to load matrixes to continue training
 #take into account different size embedding matrices 
 
-    def __init__(self, given_optimizer,  total_classes,  embed_dimension, model, variable_name, dtype=torch.float ):
+    def __init__(self, given_optimizer,  total_classes,  embed_dimension, model, variable_name, dtype=torch.float, deviceType = 'cuda', pinType = False):
         self.given_optimizer = given_optimizer
         self.total_classes = total_classes
         self.embed_dimension = embed_dimension
         self.model = model
         self.variable_name = variable_name
         self.dtype = dtype
+        self.deviceType = deviceType
+        self.pinType = pinType
         optimizer_index = None
 
         #Some optiizers do not initialize its state until after first step
@@ -178,7 +182,7 @@ class GPUPytorchOptimizerFactory(_GPUPytorchCommon): #to do later, able to load 
     def optInit(self):
         self.pytorchGPUVar = []
         for optVar in self.optVarList:
-            self.pytorchGPUVar.append( torch.zeros( size=(self.total_classes, self.embed_dimension), dtype=self.dtype, device = 'cuda') )
+            self.pytorchGPUVar.append( torch.zeros( size=(self.total_classes, self.embed_dimension), dtype=self.dtype, device=self.deviceType, pin_memory=self.pinType) )
             
     def beforeForwardPass(self, retrievedPosIndexes , retrievedNegIndexes = None):
         torch.cuda.synchronize()
@@ -194,14 +198,14 @@ class GPUPytorchOptimizerFactory(_GPUPytorchCommon): #to do later, able to load 
         reshapedRetrieval = self._getReshapedRetrieval( retrievedPosIndexes, retrievedNegIndexes )
 
         for idx, optVar in enumerate(self.optVarList):
-            self.pytorchGPUVar[idx][ reshapedRetrieval ] =  self.given_optimizer.state_dict()['state'][ self.optimizerKey ][optVar] 
+            self.pytorchGPUVar[idx][ reshapedRetrieval ] = self.given_optimizer.state_dict()['state'][ self.optimizerKey ][optVar] 
             
-class GPUPytorchCOM(_GPUPytorchCommon):
+class PytorchCOM(_PytorchCommon):
 
     def __init__(self, total_classes, datatype = torch.int32 ):
         self.total_classes = total_classes
         self.dtype = datatype
 
     def comInit(self):
-        self.pytorchGPUVar = torch.zeros( size=(self.total_classes, self.embed_dimension), dtype=self.dtype, device = 'cuda')
+        self.pytorchGPUVar = torch.zeros( size=(self.total_classes, self.embed_dimension), dtype=self.dtype, device=self.deviceType, pin_memory=self.pinType)
 
